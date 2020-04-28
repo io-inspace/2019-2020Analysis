@@ -1,0 +1,470 @@
+---
+  title: "2020 Analysis"
+  output: html_notebook
+---
+  
+  #edited spring2020
+  
+  # *NOTES:* 
+  
+  #investigate a partner.status*X..nodules interaction
+  
+  #I AM REMOVING THE 17 INDIVIDUALS WITH NA FOR ROOT BIOMASS >:(
+  
+  # need PARTNER PLOTS :(
+  
+  # eventually you really should do root:shoot biomass.
+  
+  # lookin' good! Just waiting on the last two root specimens, and data verification should be done by this week.
+
+# Background/Metadata
+
+History: All data is inherited from COF's rotation experiment with SK and CWW, Sp and Summer 2019.
+
+Design: All individuals were potted with a conspecific (Mono), and a subset of those were also potted with M. lupulina (Mixed). Potted pairs were either inoculated with Melodigyne hapla (N+), or remained uninoculated as a control (N-). Rhizobia inoculation was ambient. Pots were randomly assigned to 10 blocks, but such that N+ and N- were grouped together in Trays to prevent accidental inoculation of control pots.
+
+Native Species: 
+
+Legumes:
+
+*Partridge Pea (Chaemecrista fasciculata)*
+Showy Tick Trefoil (Desmodium canadense)
+
+Grasses:
+
+*Bottlebrush (Elymus hystrix)*
+Big Bluestem (Andropogon gerardii)
+
+Asters:
+
+*Black-eyed susan (Rudbeckia hirta)*
+Goldenrod (Solidago rugosa)
+
+Non-native Species: 
+
+Legumes:
+
+*Black Medic (Medicago lupulina)*
+*White Clover (Trifolium repens)*
+
+Grasses:
+
+*Smooth Brome (Bromus inermis)*
+Tall Fescue (Festuca arundinacae)
+
+Asters:
+
+*Common Chicory (Cichorium intybus)*
+Oxeye Daisy (Chrysanthemum leucantheumum)
+
+(* indicates subset of species grown with Medicago lupulina.)
+
+# Analysis
+
+```{r summary of sample sizes for each analysis}
+#April 24: 
+# FULL: roots has n = 700 individuals.
+# INOCULATION: roots_DONE has n = 390 inidividuals.
+# SUSCEPTIBILITY (Mono & Nem+): roots_r has n = 147 individuals.
+# TOLERANCE (Mono & Nem-/+): roots_t has n = 226 individuals.
+# RII: MeLu_compdat has n = 112 data points.
+# fitdiff: fitdiff has n = 112 data points.
+# colonization: done_rawcol and done_standcol have n = 63 data points.
+```
+
+
+```{r load libraries and raw data, include = FALSE}
+
+library(lme4)
+library(MuMIn)
+library(glmmTMB)
+library(car)
+library(ggplot2)
+library(gridExtra)
+library(DHARMa)
+library(effects)
+library(emmeans)
+# Source files
+
+roots<-read.csv('Cassie Root Data.csv',sep=',',header = TRUE)
+
+# add in rootmass data
+
+rootmass<-read.csv('Cassie Root Mass Data.csv',header=TRUE,sep=',')
+colnames(rootmass)<-c('Plant.ID','rootmass')
+thing<-merge(roots,rootmass,by='Plant.ID',all.x=TRUE)
+roots<-thing[order(thing$Pot.ID),]
+
+#NAs shoot biomass = 0 means rootmass = 0 except in one case when teeny tiny roots persisted.
+roots$rootmass[c(which(roots$shoot.biomass==0))]=0
+roots$rootmass[417]=.0028
+
+```
+
+```{r clean-up and covariates, include = FALSE}
+
+# add a mono v mixed column distinct from Tray
+ftray<-function(x) if(x == 'Mono1' | x == 'Mono2'){x = 'Mono'}else{x='Mix'}
+roots$monoculture<-sapply(roots$Tray,ftray)
+
+# add a status column
+fstatus<-function(x) if(x == 'TrRe'| x == 'MeLu' | x == 'BrIn' | x == 'CiIn' | x == 'FeAr' | x == 'ChLe'){x = 'nonnative'}else{x = 'native'}
+roots$status<-sapply(roots$Species,fstatus)
+
+roots<-roots[-(dim(roots)[1]),]
+roots<-droplevels(roots) #freaking levels.
+
+roots$Block<-as.factor(roots$Block)
+roots$N..N.<-as.factor(roots$N..N.)
+roots$Species<-as.factor(roots$Species)
+roots$Family<-as.factor(roots$Family)
+roots$status<-as.factor(roots$status)
+roots$monoculture<-as.factor(roots$monoculture)
+
+```
+
+```{r data specs and issues, include=TRUE}
+
+View(roots)
+
+#1. THERE ARE DUPLICATE INDIVIDUALS IN THIS DATA:
+which(table(roots$Plant.ID)!=1)
+#the two 38Bs are the same EXCEPT for their root masses: 0.5828 and 1.8321. 
+#the two 96As are identical, just delete one.
+roots<-roots[-193,]
+
+#the two 169As are the same EXCEPT for their root masses: 0.8038 and 3.0302. Which one is actually 169A? What plant does the other data point refer to?
+
+#the two 253Bs are the same EXCEPT for their root masses: 0.0387 and 4.9870. Which one is actually 253B? What plant does the other data point refer to?
+
+#the two 293Bs are the same EXCEPT for their root masses: 0.6954 and 2.0172. Which one is actually 293B? What plant does the other data point refer to?
+
+#FOR NOW, temporarily remove both duplicate individuals, since we don't know which one is correct.
+roots<-roots[roots$Plant.ID!='169A' & roots$Plant.ID!='253B' & roots$Plant.ID!='293B' & roots$Plant.ID!='38B',]
+
+###########
+
+#2. THERE ARE STILL 16 NA VALUES FOR ROOT BIOMASS WHERE THERE WERE SHOOTS - trying to figure out wtf happened: 
+View(roots[which(is.na(roots$rootmass)),])
+
+#some possibilities: 
+#1.we have two 253Bs and a missing value for 353B. I bet this is a switchup.
+#2. we have two 293Bs and a missing 263B. I bet this is a switchup.
+#3. we have two 38Bs and a missing 58B. I bet this is a switchup.
+
+#FOR NOW, temporarily remove these individuals.
+
+roots<-roots[!is.na(roots$rootmass),]
+
+
+###########
+
+#3. WHAT IS WITH THE RANDOM 6 IN THE DEFUNCT ROOT.BIOMASS COLUMN??
+
+###########
+
+#4. THERE WERE ERRORS INTRODUCED WHEN LISTING ROOT AND SHOOT BIOMASS FROM BAGS TO BOOKS TO EXCEL. ONCE DATA VERIFICATION IS COMPLETE, WE NEED TO USE THE CORRECTED SPREADSHEET WE'VE BEEN WORKING ON IN GOOGLE DRIVE.
+
+###########
+
+#5. All of our continuous data had long tails, I actually think that's mostly OK.
+hist(roots$X..galls)
+hist(roots$X..nodules)
+hist(roots$shoot.biomass)
+
+###########
+
+#6. Except for roots....
+
+hist(roots$rootmass) #so this 80g monster is due to dirt in the roots. This is an issue because some roots were washed really meticulously to get colonization data, while other roots were never washed at all. What's a good way to account for this? Add a covariate for "washed"? At the same time, some species roots stayed cleaner than others regardless of their "washed" status. For example C. intybus has really coarse roots compared to B. inermis, and seemed to always hold less dirt. So species differences are accounted for in the linear mixed-effects model, but not washing. Maybe do a Species/washed-status group? Where any species with non-zero and non-NA gall/nodule counts get categorized as washed? ...the ones that I counted later I didn't always wash, but I think when Shaniya and Connor were doing it they always washed their roots. So maybe a Species/counter group? Where if they got counted by Shaniya or Connor they're "washed" and if they got counted by me they were "unwahsed"  - but only for the zero and NA ones because I washed them if I had to count. JESUS CHRIST.
+
+#OR, do you want an interaction effect with rootmass? IDK.
+
+# add a "washed-status"" column
+roots$wstat<-NULL
+for(i in 1:dim(roots)[1]){
+  if(is.na(roots$X..galls[i]) & is.na(roots$X..nodules[i])){roots$wstat[i] = 'unwashed'} else if (roots$X..galls[i]==0 & roots$X..nodules[i]==0 & roots$Initials[i] == 'SJC'){roots$wstat[i] = 'unwashed'}else{roots$wstat[i]='washed'}
+}
+roots$wstat<-as.factor(roots$wstat)
+
+modit<-lm(sqrt(rootmass)~wstat*Species,data=roots)
+hist(modit$residuals)
+plot(modit)
+Anova(modit,type=3)
+#THIS INDICATES WE DON'T NEED TO WORRY ABOUT DIRT IN THE ROOTS, because weight varies by species but not by wash-status or their interaction.
+```
+
+```{r was nematode inoculation successful?}
+
+# compile data from the subset of individuals with root data.
+roots_DONE<-roots[!is.na(roots$X..nodules) & !is.na(roots$X..galls),]
+
+# convert counts to presence-absence data:
+roots_DONE$nz <- as.numeric(roots_DONE$X..galls>0)
+
+table(roots_DONE$nz,roots_DONE$N..N.)
+
+inoc<-glmer(nz ~ N..N. + (1|Block/Tray) + (1|Species), data=roots_DONE,family=binomial,control=glmerControl(optCtrl=list(maxfun=1e6)))
+
+simulationOutput <- simulateResiduals(fittedModel = inoc, n = 250)
+testZeroInflation(simulationOutput)
+plot(simulationOutput)
+# Are these DHARMa results acceptable?
+
+Anova(inoc,type=2) #because I did not include interactions.
+
+```
+
+## Question 1: How do species differ in their susceptibility, resistance, and tolerance to a non-specialist parasite?
+
+```{r susceptibility, include=TRUE}
+
+roots_r<-roots_DONE[roots_DONE$N..N.=='N+' & roots_DONE$monoculture=='Mono',]
+
+#get colonization metric:
+wrootmass<-roots_r$X..galls/roots_r$rootmass
+minimum<-min(wrootmass)
+maximum<-max(wrootmass)
+fnorm<-function(x) (x-minimum)/(maximum-minimum)
+roots_r$standard_galls<-sapply(wrootmass,fnorm)
+
+#function to calculate Cohen's D:
+cohens_d <- function(x, y) {
+    lx <- length(x)- 1
+   ly <- length(y)- 1
+   md  <- abs(mean(x) - mean(y))        ## mean difference (numerator)
+   csd <- lx * var(x) + ly * var(y)
+   csd <- csd/(lx + ly)
+   csd <- sqrt(csd)                     ## common sd computation
+   
+   cd  <- md/csd                        ## cohen's d
+}
+
+sps<-c('AnGe','BrIn','ChFa','ChLe','CiIn','DeCa','ElHy','FeAr','MeLu','RuHi','SoRu','TrRe')
+means<-NULL
+for(m in 1:length(sps)){
+  means[m]<-mean(roots_r$X..galls[roots_r$Species==sps[m]])
+}
+
+cohensD<-matrix(data=NA,ncol=length(sps),nrow=length(sps),byrow=FALSE)
+for(i in 1:length(sps)){for(j in 1:length(sps)){
+  cohensD[i,j]<-cohens_d(roots_r$standard_galls[roots_r$Species==sps[i]],roots_r$standard_galls[roots_r$Species==sps[j]])
+}}
+colnames(cohensD)<-sps
+rownames(cohensD)<-sps
+cohensD[upper.tri(cohensD)]<-NA
+
+par(mar=c(5.1, 4.1, 4.1, 4.1)) 
+library(plot.matrix)
+plot(cohensD,col=terrain.colors(10),las=2,xlab=NA,ylab=NA)
+detach(package:plot.matrix, unload=TRUE)
+```
+
+```{r tolerance, include=TRUE}
+
+#out of the six susceptible species, only three had enough colonization to calculate tolerance. This is fine I think, because if you're barely susceptible you might as well be resistant, in which case you're usually not going to have enough variation in colonization to measure tolerance.
+
+#note: unlike for susceptibility, for tolerance I'm including individuals from the N- treatment as well. Still all in monoculture.
+roots_t<-roots_DONE[roots_DONE$monoculture=='Mono',]
+
+wrootmass<-roots_t$X..galls/roots_t$rootmass
+minimum<-min(wrootmass)
+maximum<-max(wrootmass)
+fnorm<-function(x) (x-minimum)/(maximum-minimum)
+roots_t$standard_galls<-sapply(wrootmass,fnorm)
+
+
+#slope of the relationship between biomass and colonization for ChLe, MeLu, and TrRe:
+tol_ChLe<-lm(scale(I(shoot.biomass+rootmass),center=TRUE)~standard_galls,data=roots_t[roots_t$Species=='ChLe',])
+hist(tol_ChLe$residuals)
+plot(tol_ChLe)
+
+tol_MeLu<-lm(scale(I(log(shoot.biomass+rootmass)),center=TRUE)~standard_galls,data=roots_t[roots_t$Species=='MeLu',])
+hist(tol_MeLu$residuals)
+plot(tol_MeLu)
+
+tol_TrRe<-lm(scale(I(shoot.biomass+rootmass),center=TRUE)~standard_galls,data=roots_t[roots_t$Species=='TrRe',])
+hist(tol_TrRe$residuals)
+plot(tol_TrRe)
+
+plot(scale(I(shoot.biomass+rootmass),center=TRUE)~standard_galls,data=roots_t[roots_t$Species=='ChLe',],col='springgreen2',pch=16,xlim=c(0,1),ylim=c(-2,4))
+abline(tol_ChLe$coefficients[1],tol_ChLe$coefficients[2],col='springgreen2',lwd=2)
+points(roots_t$standard_galls[roots_t$Species=='MeLu'],scale(I(roots_t$shoot.biomass[roots_t$Species=='MeLu']+roots_t$rootmass[roots_t$Species=='MeLu']),center=TRUE),col='gold',pch=16)
+abline(tol_MeLu$coefficients[1],tol_MeLu$coefficients[2],col='gold',lwd=2)
+points(roots_t$standard_galls[roots_t$Species=='TrRe'],scale(I(roots_t$shoot.biomass[roots_t$Species=='TrRe']+roots_t$rootmass[roots_t$Species=='TrRe']),center=TRUE),col='grey',pch=16)
+abline(tol_TrRe$coefficients[1],tol_TrRe$coefficients[2],col='grey',lwd=2)
+
+legend('topright',legend=c('T. repens','M. lupulina','C. leucanthemum'),col=c('grey','gold','springgreen2'),pch=c(16,16,16),lwd=c(2,2,2),bty='n')
+
+```
+
+## Characterizing susceptibility at a community level:
+```{r community-level susceptibility}
+
+#use roots_r
+
+#what factors related to susceptiblity?
+
+Q1a<-glmmTMB(X..galls ~  status + Family + scale(X..nodules, center=TRUE) + scale(shoot.biomass,center=TRUE) + scale(rootmass,center=TRUE) + (1|Block/Tray) + (1|Species), ziformula = ~ Family, data=roots_r,family=nbinom2, control=glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)))
+
+simulationOutput <- simulateResiduals(fittedModel = Q1a, n = 750)
+testZeroInflation(simulationOutput)
+plot(simulationOutput)
+
+Anova(Q1a,type=2)
+
+# Q1b<-glmmTMB(X..galls ~  status + Family + scale(X..nodules, center=TRUE) + scale(shoot.biomass,center=TRUE) + scale(rootmass,center=TRUE) + (1|Block/Tray) + (1|Species), ziformula = ~ Family, data=roots_r[roots_r$Family!='Grass',],family=nbinom2, control=glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)))
+# 
+# simulationOutput <- simulateResiduals(fittedModel = Q1b, n = 750)
+# testZeroInflation(simulationOutput)
+# plot(simulationOutput)
+# 
+# Anova(Q1b,type=2)
+# 
+# Q1c<-glmmTMB(X..galls ~  status + Family + scale(X..nodules, center=TRUE) + scale(shoot.biomass,center=TRUE) + scale(rootmass,center=TRUE) + (1|Block/Tray) + (1|Species), ziformula = ~ status, data=roots_r[roots_r$Family!='Grass',],family=nbinom2, control=glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)))
+# 
+# simulationOutput <- simulateResiduals(fittedModel = Q1c, n = 750)
+# testZeroInflation(simulationOutput)
+# plot(simulationOutput)
+# 
+# Anova(Q1c,type=2)
+
+plot(X..galls~status,data=roots_r)
+
+```
+
+# Q2: How does parasite presence affect host performance during competitive interactions?
+
+```{r}
+#subset 6 species planted in mixture:
+competition<-droplevels(roots[roots$Species=='BrIn' | roots$Species=='ChFa' | roots$Species=='CiIn' | roots$Species=='ElHy' | roots$Species=='RuHi' | roots$Species=='MeLu' | roots$Species=='TrRe',1:26]) #don't need the wstat column
+
+#here, we only want mixed pots with both individuals weighed. Since we removed duplicates, we need to temporarily remove those pots.
+potstorem<-competition[competition$monoculture=='Mix',] #top row
+
+competition<-competition[competition$Pot.ID!=38 & competition$Pot.ID!=40 & competition$Pot.ID!=125 & competition$Pot.ID!=165 & competition$Pot.ID!=253 & competition$Pot.ID!=263 & competition$Pot.ID!=301 & competition$Pot.ID!=306,]
+
+```
+
+
+```{r RII, include = TRUE}
+
+#calculate RII for all individuals whether they have complete root data or not
+#now do RII:
+rmarkdown::render("calculateRII.Rmd")
+
+#using small plants leads to positive RII and using large plants leads to 
+#negative RII. Makes sense.
+# plot(s.Nminus$RII_SB~l.Nminus$RII_SB)
+# abline(h=0,v=0)
+# #13 points shifted positive with small plant
+# 
+# plot(s.Nplus$RII_SB~l.Nplus$RII_SB)
+# abline(h=0,v=0)
+#9 points shifted positive with small plant
+
+#using small plants leads to positive RII and using large plants leads to 
+#negative RII. Makes sense.
+
+# plot(RII_SB~treatment,data = done_random, main='shoot biomass')
+# plot(RII_RB~treatment,data = done_random, main = 'root biomass')
+
+#modeling RII:
+MeLu_compdat<-done_random
+
+Q2_SB<-lmer(RII_SB ~ treatment*partner.Family + treatment*partner.status + treatment*scale(partner.SB,center=TRUE) + treatment*scale(partner.RM,center=TRUE) + partner.Family*scale(partner.SB,center=TRUE) + partner.status*scale(partner.SB,center=TRUE) + partner.Family*scale(partner.RM,center=TRUE) + partner.status*scale(partner.RM,center=TRUE) + (1|Block), data=MeLu_compdat,REML=TRUE) 
+
+simulationOutput <- simulateResiduals(fittedModel = Q2_SB, n = 750)
+plot(simulationOutput)
+
+Anova(Q2_SB,type=3)
+eff<-emmeans(Q2_SB,~treatment | partner.status)
+plot(eff, y, type='linear predictor', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+
+Q2_RB<-lmer(RII_RB ~ treatment*partner.Family + treatment*partner.status + treatment*scale(partner.SB,center=TRUE) + treatment*scale(partner.RM,center=TRUE) + partner.Family*scale(partner.SB,center=TRUE) + partner.status*scale(partner.SB,center=TRUE) + partner.Family*scale(partner.RM,center=TRUE) + partner.status*scale(partner.RM,center=TRUE) + (1|Block), data=MeLu_compdat,REML=TRUE)
+
+simulationOutput <- simulateResiduals(fittedModel = Q2_RB, n = 750)
+plot(simulationOutput)
+
+Anova(Q2_RB,type=3)
+eff<-emmeans(Q2_RB,~treatment | partner.status)
+plot(eff, y, type='linear predictor', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+
+
+```
+
+```{r fitness differences, include=TRUE}
+
+#this chunk of code will work for mixed pots, which is all you need here:
+fitdiff<-competition[competition$Species=='MeLu' & competition$monoculture=='Mix',]
+partner.status<-NULL
+partner.Family<-NULL
+partner.Species<-NULL
+partner.galls<-NULL
+partner.nods<-NULL
+partner.shootbiomass<-NULL
+partner.rootmass<-NULL
+pots<-fitdiff$Pot.ID
+index=1
+for(p in pots){pairs<-competition[competition$Pot.ID==p,]
+
+partner.status[index]<-as.character(pairs[1,'status'])
+partner.Family[index]<-as.character(pairs[1,'Family'])
+partner.Species[index]<-as.character(pairs[1,'Species'])
+partner.galls[index]<-pairs[1,'X..galls']
+partner.nods[index]<-pairs[1,'X..nodules']
+partner.shootbiomass[index]<-pairs[1,'shoot.biomass']
+partner.rootmass[index]<-pairs[1,'rootmass']
+index=index+1
+
+}
+fitdiff$partner.status<-as.factor(partner.status)
+fitdiff$partner.Family<-as.factor(partner.Family)
+fitdiff$partner.Species<-as.factor(partner.Species)
+fitdiff$partner.galls<-partner.galls
+fitdiff$partner.nods<-partner.nods
+fitdiff$partner.shootbiomass<-partner.shootbiomass
+fitdiff$partner.rootmass<-partner.rootmass
+#fitdiff$shoot.biomass[fitdiff$shoot.biomass==0]<-.001
+#fitdiff$partner.shootbiomass[fitdiff$partner.shootbiomass==0]<-.001
+#fitdiff$partner.rootmass[fitdiff$partner.rootmass==0]<-.001
+
+#clean it up jesus.
+fitdiff<-fitdiff[,c(1:7,9:10,14,23,25:33)]
+colnames(fitdiff)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmix','g_Mmix','shoot.biomass','rootmass','monoculture','status','partner.status','partner.Family','partner.Species','g_Pmix','n_Pmix','partner.SB','partner.RM')
+
+fitdiff$deltaB_roots<-MeLu$rootmass - MeLu$partner.rootmass
+fitdiff$deltaB_shoots<-MeLu$shoot.biomass - MeLu$partner.shootbiomass
+
+
+root_diff<-lmer(sqrt(abs(deltaB_roots))~treatment*partner.Family + treatment*partner.status + treatment*scale(partner.SB,center=TRUE)  + partner.Family*scale(partner.SB,center=TRUE) + partner.status*scale(partner.SB,center=TRUE) + (1|partner.Species)+ (1|Block),data=fitdiff,REML=TRUE)
+
+simulationOutput <- simulateResiduals(fittedModel = root_diff, n = 750)
+plot(simulationOutput)
+
+Anova(root_diff,type=3)
+eff<-emmeans(root_diff,~treatment | partner.status)
+plot(eff, y, type='response', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+eff<-emmeans(root_diff,~treatment | partner.Family)
+plot(eff, y, type='response', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+
+
+shoot_diff<-lmer(sqrt(abs(deltaB_shoots))~treatment*partner.Family + treatment*partner.status + treatment*scale(partner.RM,center=TRUE)  + partner.Family*scale(partner.RM,center=TRUE) + partner.status*scale(partner.RM,center=TRUE) + (1|partner.Species)+ (1|Block),data=fitdiff,REML=TRUE)
+
+simulationOutput <- simulateResiduals(fittedModel = shoot_diff, n = 750)
+plot(simulationOutput)
+
+Anova(shoot_diff,type=3)
+eff<-emmeans(shoot_diff,~treatment | partner.status)
+plot(eff, y, type='response', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+eff<-emmeans(shoot_diff,~treatment | partner.Family)
+plot(eff, y, type='response', CIs = TRUE, PIs = FALSE,comparisons = TRUE,alpha=.05,horizontal=FALSE)
+
+```
+
+```{r colonization data}
+
+rmarkdown::render("calculatecolonization_mixVmono.Rmd")
+
+#3a: how does nematode and rhizobia colonization change across MeLu in monoculture and mixture with and without nematodes (testing for dilution or spillover)
+

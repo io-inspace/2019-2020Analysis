@@ -1,0 +1,197 @@
+---
+title: "calculate RII"
+output: html_notebook
+---
+
+```{r calculate RII, include = FALSE}
+#this chunk of code will work for mixed pots:
+MeLu<-competition[competition$Species=='MeLu' & competition$monoculture=='Mix',]
+
+partner.status<-NULL
+partner.Family<-NULL
+partner.Species<-NULL
+partner.galls<-NULL
+partner.nods<-NULL
+partner.shootbiomass<-NULL
+partner.rootmass<-NULL
+pots<-MeLu$Pot.ID
+index=1
+for(p in pots){pairs<-competition[competition$Pot.ID==p,]
+
+partner.status[index]<-as.character(pairs[1,'status'])
+partner.Family[index]<-as.character(pairs[1,'Family'])
+partner.Species[index]<-as.character(pairs[1,'Species'])
+partner.galls[index]<-pairs[1,'X..galls']
+partner.nods[index]<-pairs[1,'X..nodules']
+partner.shootbiomass[index]<-pairs[1,'shoot.biomass']
+partner.rootmass[index]<-pairs[1,'rootmass']
+index=index+1
+
+}
+MeLu$partner.status<-as.factor(partner.status)
+MeLu$partner.Family<-as.factor(partner.Family)
+MeLu$partner.Species<-as.factor(partner.Species)
+MeLu$partner.galls<-partner.galls
+MeLu$partner.nods<-partner.nods
+MeLu$partner.shootbiomass<-partner.shootbiomass
+MeLu$partner.rootmass<-partner.rootmass
+#MeLu$shoot.biomass[MeLu$shoot.biomass==0]<-.001
+#MeLu$partner.shootbiomass[MeLu$partner.shootbiomass==0]<-.001
+#MeLu$partner.rootmass[MeLu$partner.rootmass==0]<-.001
+
+#clean it up jesus.
+MeLu<-MeLu[,c(1:7,9:10,14,23,25:33)]
+colnames(MeLu)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmix','g_Mmix','shoot.biomass','rootmass','monoculture','status','partner.status','partner.Family','partner.Species','g_Pmix','n_Pmix','partner.shootbiomass','partner.rootmass')
+
+MeLuMONO<-competition[competition$Species=='MeLu' & competition$monoculture=='Mono',]
+
+pots<-unique(MeLuMONO$Pot.ID)
+
+#random individuals from mono pots
+rand<-list()
+index = 1
+set.seed(7) #my lucky number.
+for(p in pots){
+  pairs<-competition[competition$Pot.ID==p,]
+  r<-round(runif(1,1,2))
+  rand[[index]]<-pairs[r,]
+  
+  index = index+1
+}
+
+rand_dat<-do.call(rbind,rand)
+rand_dat<-rand_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(rand_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+#rand_dataframe<-rbind(MeLu[,1:dim(rand_dat)[2]],rand_dat)
+
+
+#largest or smallest individuals from mono pots
+large_sb<-list()
+small_sb<-list()
+# large_rb<-list()
+# small_rb<-list()
+index = 1
+set.seed(7) #my lucky number.
+for(p in pots){
+  pairs<-competition[competition$Pot.ID==p,]
+  
+  l<-which(pairs$shoot.biomass==max(pairs$shoot.biomass))
+  s<-which(pairs$shoot.biomass==min(pairs$shoot.biomass))
+  
+  large_sb[[index]]<-pairs[l,]
+  small_sb[[index]]<-pairs[s,]
+  
+  #you need all the root data then this won't hang up.
+  # l<-which(pairs$rootmass==max(pairs$rootmass))
+  # s<-which(pairs$rootmass==min(pairs$rootmass))
+  # 
+  # large_rb[index]<-as.character(pairs$Plant.ID[l])
+  # small_rb[index]<-as.character(pairs$Plant.ID[s])
+  
+  index = index+1
+}
+
+large_dat<-do.call(rbind,large_sb)
+large_dat<-large_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(large_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+
+small_dat<-do.call(rbind,small_sb)
+small_dat<-small_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(small_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+# large_dataframe<-rbind(MeLu[,1:dim(large_dat)[2]],large_dat)
+# small_dataframe<-rbind(MeLu[,1:dim(small_dat)[2]],small_dat)
+
+#all individuals from mono pots with root data:
+comp_data<-list()
+index = 1
+set.seed(7) #my lucky number.
+for(p in pots){
+  pairs<-competition[competition$Pot.ID==p,]
+  
+  c<-which(!is.na(pairs$X..nodules) & !is.na(pairs$X..galls) )
+
+  comp_data[[index]]<-pairs[c,]
+
+  #you need all the root data then this won't hang up.
+  # l<-which(pairs$rootmass==max(pairs$rootmass))
+  # s<-which(pairs$rootmass==min(pairs$rootmass))
+  # 
+  # large_rb[index]<-as.character(pairs$Plant.ID[l])
+  # small_rb[index]<-as.character(pairs$Plant.ID[s])
+  
+  index = index+1
+}
+
+comp_dat<-do.call(rbind,comp_data)
+comp_dat<-comp_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(comp_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+#at this point, you have comp_dat for when you want Mono plants with root data, and you can cull the MeLu data frame for incomplete roots when you need to. 
+
+#now that you have dataframes with random monos, large monos, and small monos,
+#you need to calculate individual RII tables using each data frame. 
+
+RII<- function(Bw,B0,print=TRUE){
+  intensity<- (Bw-B0)/(Bw+B0)
+  output<-intensity
+  return(output)
+}
+
+diffdata<- function (mixed_dat,mono_dat,ntreat){
+  RIIbyblock<-list()
+  for(b in 1:10){
+    evaluate_mono<-mono_dat[mono_dat$Block==b & mono_dat$treatment== ntreat,]
+    evaluate_mixed<-mixed_dat[mixed_dat$Block==b & mixed_dat$treatment == ntreat,]
+    B0<-evaluate_mono$shoot.biomass
+    B0_R<-evaluate_mono$rootmass
+    RII_SB<-NULL
+    RII_RB<-NULL
+    for(i in 1:dim(evaluate_mixed)[1]){
+      Bw<-evaluate_mixed$shoot.biomass[i]
+      Bw_R<-evaluate_mixed$rootmass[i]
+      RII_SB[i]<-RII(Bw,B0)
+      RII_RB[i]<-RII(Bw_R,B0_R)
+    }
+    RIIbyblock[[b]]<-cbind(evaluate_mixed,RII_SB,RII_RB)
+    RIIbyblock[[b]]<-RIIbyblock[[b]][,c(3,5:6,14:16,19:22)]
+    colnames(RIIbyblock[[b]])<-c('Block','treatment','focal species','partner.status','partner.Family','partner.Species','partner.SB','partner.RM','RII_SB','RII_RB')
+  }
+  return(RIIbyblock)
+}
+
+
+
+random_Nminus<-diffdata(mixed_dat = MeLu, mono_dat = rand_dat, ntreat = 'N-')
+rand.Nminus<-do.call(rbind,random_Nminus)
+
+random_Nplus<-diffdata(mixed_dat = MeLu, mono_dat = rand_dat, ntreat = 'N+')
+rand.Nplus<-do.call(rbind,random_Nplus)
+
+large_Nminus<-diffdata(mixed_dat = MeLu, mono_dat = large_dat, ntreat = 'N-')
+l.Nminus<-do.call(rbind,large_Nminus)
+
+large_Nplus<-diffdata(mixed_dat = MeLu, mono_dat = large_dat, ntreat = 'N+')
+l.Nplus<-do.call(rbind,large_Nplus)
+
+small_Nminus<-diffdata(mixed_dat = MeLu, mono_dat = small_dat, ntreat = 'N-')
+s.Nminus<-do.call(rbind,small_Nminus)
+
+small_Nplus<-diffdata(mixed_dat = MeLu, mono_dat = small_dat, ntreat = 'N+')
+s.Nplus<-do.call(rbind,small_Nplus)
+
+
+#tack on partner.X data from MeLu, which is organized differently than the done matrices, so make sure they match:
+# partner.X<-rbind(MeLu[MeLu$N..N.=='N-',27:33],MeLu[MeLu$N..N.=='N+',27:33])
+# 
+# done_random<-cbind(rbind(rand.Nminus,rand.Nplus),partner.X)
+# done_large<-cbind(rbind(large.Nminus,large.Nplus),partner.X)
+# done_small<-cbind(rbind(small.Nminus,small.Nplus),partner.X)
+
+done_random<-rbind(rand.Nminus,rand.Nplus)
+done_large<-rbind(l.Nminus,l.Nplus)
+done_small<-rbind(s.Nminus,s.Nplus)
+
+```

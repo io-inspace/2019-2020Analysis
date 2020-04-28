@@ -1,0 +1,273 @@
+---
+title: "calculate difference in colonization on focal species in Nem+ v Nem- treatments"
+output: html_notebook
+---
+
+#Need to add standcol in addition to rawcol.
+
+```{r calculate rawcol, include = FALSE}
+#this chunk of code will work for mixed pots:
+MeLu<-competition[competition$Species=='MeLu' & competition$monoculture=='Mix',]
+
+partner.status<-NULL
+partner.Family<-NULL
+partner.Species<-NULL
+partner.galls<-NULL
+partner.nods<-NULL
+partner.shootbiomass<-NULL
+partner.rootmass<-NULL
+pots<-MeLu$Pot.ID
+index=1
+for(p in pots){pairs<-competition[competition$Pot.ID==p,]
+
+partner.status[index]<-as.character(pairs[1,'status'])
+partner.Family[index]<-as.character(pairs[1,'Family'])
+partner.Species[index]<-as.character(pairs[1,'Species'])
+partner.galls[index]<-pairs[1,'X..galls']
+partner.nods[index]<-pairs[1,'X..nodules']
+partner.shootbiomass[index]<-pairs[1,'shoot.biomass']
+partner.rootmass[index]<-pairs[1,'rootmass']
+index=index+1
+
+}
+MeLu$partner.status<-as.factor(partner.status)
+MeLu$partner.Family<-as.factor(partner.Family)
+MeLu$partner.Species<-as.factor(partner.Species)
+MeLu$partner.galls<-partner.galls
+MeLu$partner.nods<-partner.nods
+MeLu$partner.shootbiomass<-partner.shootbiomass
+MeLu$partner.rootmass<-partner.rootmass
+#MeLu$shoot.biomass[MeLu$shoot.biomass==0]<-.001
+#MeLu$partner.shootbiomass[MeLu$partner.shootbiomass==0]<-.001
+#MeLu$partner.rootmass[MeLu$partner.rootmass==0]<-.001
+
+#clean it up jesus.
+MeLu<-MeLu[,c(1:7,9:10,14,23,25:33)]
+colnames(MeLu)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmix','g_Mmix','shoot.biomass','rootmass','monoculture','status','partner.status','partner.Family','partner.Species','g_Pmix','n_Pmix','partner.shootbiomass','partner.rootmass')
+
+completeMIX<-MeLu[!is.na(MeLu$n_Mmix) & !is.na(MeLu$g_Mmix) & !is.na(MeLu$n_Pmix) & !is.na(MeLu$g_Pmix),]
+View(completeMIX)
+
+
+MeLuMONO<-competition[competition$Species=='MeLu' & competition$monoculture=='Mono',]
+
+#NOTE: remove block 8 because there's no monoculture N+ for comparison grr.
+completeMONO<-MeLuMONO[!is.na(MeLuMONO$X..galls) & !is.na(MeLuMONO$X..nodules) & MeLuMONO$Block!=8,]
+
+
+
+#OK we want one randomly chosen MeLu individual grown in monoculture from each block and each treatment:
+
+table(completeMONO[completeMONO$N..N.=='N-',2]) #need to randomly choose and individual from pot 79, 175, 187, 295, and 355.
+
+table(completeMONO[completeMONO$N..N.=='N+',2]) #need to randomly choose and individual from pot 73 and 241.
+
+pots<-c(73, 79, 175, 187, 241, 295, 355)
+
+#random individuals from mono pots
+rand<-list()
+index = 1
+set.seed(7) #my lucky number.
+for(p in pots){
+  pairs<-completeMONO[completeMONO$Pot.ID==p,]
+  r<-round(runif(1,1,dim(pairs)[1]))
+  rand[[index]]<-pairs[r,]
+  
+  index = index+1
+}
+
+rand_dat<-do.call(rbind,rand)
+rand_dat<-rand_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(rand_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+oneind<-completeMONO[completeMONO$Pot.ID!=73 & completeMONO$Pot.ID!=79 &completeMONO$Pot.ID!=175 &completeMONO$Pot.ID!=187 &completeMONO$Pot.ID!=241 &completeMONO$Pot.ID!=295 &completeMONO$Pot.ID!=355,c(1:7,9:10,14,23,25:26)]
+colnames(oneind)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+MONOdat<-rbind(oneind,rand_dat)
+MONOdat<-MONOdat[order(MONOdat$Block),]
+
+#MONOdat is ready to be fed into the function.
+
+rawcol<- function(Bw,B0,print=TRUE){
+  intensity<- (Bw-B0)
+  output<-intensity
+  return(output)
+}
+
+diffdata<- function (mixed_dat,mono_dat,ntreat){
+  rawcolbyblock<-list()
+  for(b in c(1:7,9:10)){
+    evaluate_mono<-mono_dat[mono_dat$Block==b & mono_dat$treatment== ntreat,]
+    evaluate_mixed<-mixed_dat[mixed_dat$Block==b & mixed_dat$treatment == ntreat,]
+    B0_g<-evaluate_mono$g_Mmono
+    B0_n<-evaluate_mono$n_Mmono
+    rawcol_g<-NULL
+    rawcol_n<-NULL
+    for(i in 1:dim(evaluate_mixed)[1]){
+      Bw_g<-evaluate_mixed$g_Mmix[i]
+      Bw_n<-evaluate_mixed$n_Mmix[i]
+      rawcol_g[i]<-rawcol(Bw_g,B0_g)
+      rawcol_n[i]<-rawcol(Bw_n,B0_n)
+    }
+    rawcolbyblock[[b]]<-cbind(evaluate_mixed,rawcol_g,rawcol_n)
+    rawcolbyblock[[b]]<-rawcolbyblock[[b]][,c(3,5:6,14:16,19:22)]
+    colnames(rawcolbyblock[[b]])<-c('Block','treatment','focal species','partner.status','partner.Family','partner.Species','partner.SB','partner.RM','rawcol_g','rawcol_n')
+  }
+  return(rawcolbyblock)
+}
+
+
+random_Nminus<-diffdata(mixed_dat = completeMIX, mono_dat = MONOdat, ntreat = 'N-')
+rand.Nminus<-do.call(rbind,random_Nminus)
+
+random_Nplus<-diffdata(mixed_dat = completeMIX, mono_dat = MONOdat, ntreat = 'N+')
+rand.Nplus<-do.call(rbind,random_Nplus)
+
+done_rawcol<-rbind(rand.Nminus,rand.Nplus)
+
+```
+
+
+```{r calculate standcol, include = FALSE}
+#this chunk of code will work for mixed pots:
+MeLu<-competition[competition$Species=='MeLu' & competition$monoculture=='Mix',]
+
+partner.status<-NULL
+partner.Family<-NULL
+partner.Species<-NULL
+partner.galls<-NULL
+partner.nods<-NULL
+partner.shootbiomass<-NULL
+partner.rootmass<-NULL
+pots<-MeLu$Pot.ID
+index=1
+for(p in pots){pairs<-competition[competition$Pot.ID==p,]
+
+partner.status[index]<-as.character(pairs[1,'status'])
+partner.Family[index]<-as.character(pairs[1,'Family'])
+partner.Species[index]<-as.character(pairs[1,'Species'])
+partner.galls[index]<-pairs[1,'X..galls']
+partner.nods[index]<-pairs[1,'X..nodules']
+partner.shootbiomass[index]<-pairs[1,'shoot.biomass']
+partner.rootmass[index]<-pairs[1,'rootmass']
+index=index+1
+
+}
+MeLu$partner.status<-as.factor(partner.status)
+MeLu$partner.Family<-as.factor(partner.Family)
+MeLu$partner.Species<-as.factor(partner.Species)
+MeLu$partner.galls<-partner.galls
+MeLu$partner.nods<-partner.nods
+MeLu$partner.shootbiomass<-partner.shootbiomass
+MeLu$partner.rootmass<-partner.rootmass
+#MeLu$shoot.biomass[MeLu$shoot.biomass==0]<-.001
+#MeLu$partner.shootbiomass[MeLu$partner.shootbiomass==0]<-.001
+#MeLu$partner.rootmass[MeLu$partner.rootmass==0]<-.001
+ 
+#clean it up jesus.
+MeLu<-MeLu[,c(1:7,9:10,14,23,25:33)]
+colnames(MeLu)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmix','g_Mmix','shoot.biomass','rootmass','monoculture','status','partner.status','partner.Family','partner.Species','g_Pmix','n_Pmix','partner.shootbiomass','partner.rootmass')
+
+completeMIX<-MeLu[!is.na(MeLu$n_Mmix) & !is.na(MeLu$g_Mmix) & !is.na(MeLu$n_Pmix) & !is.na(MeLu$g_Pmix),]
+View(completeMIX)
+
+
+
+MeLuMONO<-competition[competition$Species=='MeLu' & competition$monoculture=='Mono',]
+
+#NOTE: remove block 8 because there's no monoculture N+ for comparison grr.
+completeMONO<-MeLuMONO[!is.na(MeLuMONO$X..galls) & !is.na(MeLuMONO$X..nodules) & MeLuMONO$Block!=8,]
+
+#OK we want one randomly chosen MeLu individual grown in monoculture from each block and each treatment:
+
+table(completeMONO[completeMONO$N..N.=='N-',2]) #need to randomly choose and individual from pot 79, 175, 187, 295, and 355.
+
+table(completeMONO[completeMONO$N..N.=='N+',2]) #need to randomly choose and individual from pot 73 and 241.
+
+pots<-c(73, 79, 175, 187, 241, 295, 355)
+
+#random individuals from mono pots
+rand<-list()
+index = 1
+set.seed(7) #my lucky number.
+for(p in pots){
+  pairs<-completeMONO[completeMONO$Pot.ID==p,]
+  r<-round(runif(1,1,dim(pairs)[1]))
+  rand[[index]]<-pairs[r,]
+  
+  index = index+1
+}
+
+rand_dat<-do.call(rbind,rand)
+rand_dat<-rand_dat[,c(1:7,9:10,14,23,25:26)]
+colnames(rand_dat)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+oneind<-completeMONO[completeMONO$Pot.ID!=73 & completeMONO$Pot.ID!=79 &completeMONO$Pot.ID!=175 &completeMONO$Pot.ID!=187 &completeMONO$Pot.ID!=241 &completeMONO$Pot.ID!=295 &completeMONO$Pot.ID!=355,c(1:7,9:10,14,23,25:26)]
+colnames(oneind)<-c('Plant.ID','Pot.ID','Block','Tray','treatment','Species','Family','n_Mmono','g_Mmono','shoot.biomass','rootmass','monoculture','status')
+
+MONOdat<-rbind(oneind,rand_dat)
+MONOdat<-MONOdat[order(MONOdat$Block),]
+
+standg_Mmono<-MONOdat$g_Mmono/MONOdat$rootmass
+standn_Mmono<-MONOdat$n_Mmono/MONOdat$rootmass
+standg_Mmix<-completeMIX$g_Mmix/completeMIX$rootmass
+standn_Mmix<-completeMIX$n_Mmix/completeMIX$rootmass
+standg_Pmix<-completeMIX$g_Pmix/completeMIX$partner.rootmass
+standn_Pmix<-completeMIX$n_Pmix/completeMIX$partner.rootmass
+
+g_minimum<-min(c(standg_Mmono,standg_Mmix,standg_Pmix))
+g_maximum<-max(c(standg_Mmono,standg_Mmix,standg_Pmix))
+
+n_minimum<-min(c(standn_Mmono,standn_Mmix,standn_Pmix))
+n_maximum<-max(c(standn_Mmono,standn_Mmix,standn_Pmix))
+
+g_fnorm<-function(x) (x-g_minimum)/(g_maximum-g_minimum)
+n_fnorm<-function(x) (x-n_minimum)/(n_maximum-n_minimum)
+
+MONOdat$standg_Mmono<-sapply(standg_Mmono,g_fnorm)
+MONOdat$standn_Mmono<-sapply(standn_Mmono,n_fnorm)
+completeMIX$standg_Mmix<-sapply(standg_Mmix,g_fnorm)
+completeMIX$standn_Mmix<-sapply(standn_Mmix,n_fnorm)
+completeMIX$standg_Pmix<-sapply(standg_Pmix,g_fnorm)
+completeMIX$standn_Pmix<-sapply(standn_Pmix,n_fnorm)
+
+#MONOdat and completeMIX are ready to be fed into the function.
+
+standcol<- function(Bw,B0,print=TRUE){
+  intensity<- (Bw-B0)
+  output<-intensity
+  return(output)
+}
+
+diffdataSTAND<- function (mixed_dat,mono_dat,ntreat){
+  standcolbyblock<-list()
+  for(b in c(1:7,9:10)){
+    evaluate_mono<-mono_dat[mono_dat$Block==b & mono_dat$treatment== ntreat,]
+    evaluate_mixed<-mixed_dat[mixed_dat$Block==b & mixed_dat$treatment == ntreat,]
+    B0_g<-evaluate_mono$standg_Mmono
+    B0_n<-evaluate_mono$standn_Mmono
+    standcol_g<-NULL
+    standcol_n<-NULL
+    for(i in 1:dim(evaluate_mixed)[1]){
+      Bw_g<-evaluate_mixed$standg_Mmix[i]
+      Bw_n<-evaluate_mixed$standn_Mmix[i]
+      standcol_g[i]<-standcol(Bw_g,B0_g)
+      standcol_n[i]<-standcol(Bw_n,B0_n)
+    }
+    standcolbyblock[[b]]<-cbind(evaluate_mixed,standcol_g,standcol_n)
+    standcolbyblock[[b]]<-standcolbyblock[[b]][,c(3,5:6,14:16,19:22)]
+    colnames(standcolbyblock[[b]])<-c('Block','treatment','focal species','partner.status','partner.Family','partner.Species','partner.SB','partner.RM','standcol_g','standcol_n')
+  }
+  return(standcolbyblock)
+}
+
+
+standard_Nminus<-diffdataSTAND(mixed_dat = completeMIX, mono_dat = MONOdat, ntreat = 'N-')
+standard.Nminus<-do.call(rbind,standard_Nminus)
+
+standard_Nplus<-diffdataSTAND(mixed_dat = completeMIX, mono_dat = MONOdat, ntreat = 'N+')
+standard.Nplus<-do.call(rbind,standard_Nplus)
+
+done_standcol<-rbind(standard.Nminus,standard.Nplus)
+
+```
